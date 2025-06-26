@@ -3,7 +3,7 @@ st.set_page_config(layout="wide")
 import pandas as pd
 import altair as alt
 
-st.title("리츠 연도별 배당 시뮬레이션 대시보드")
+st.title("리츠 배당 시뮬레이션")
 
 # 화면을 좌우 2열로 분할
 col1, col2 = st.columns([1, 1])
@@ -20,7 +20,7 @@ with col1:
             with cols[0]:
                 name = st.text_input(f"종목명 {i+1}", key=f"name_{i}")
             with cols[1]:
-                div_per_share = st.number_input(f"1주당ㅇ 배당금(원) {i+1}", min_value=0, value=0, key=f"div_{i}")
+                div_per_share = st.number_input(f"주당 배당금(원) {i+1}", min_value=0, value=0, key=f"div_{i}")
             with cols[2]:
                 div_months = st.multiselect(f"배당월 {i+1}", options=list(range(1,13)), default=[], key=f"months_{i}")
             if name and div_per_share > 0 and div_months:
@@ -54,10 +54,10 @@ with col1:
                     st.number_input(f"{y}년 매입금액(원)", min_value=0, value=invest, key=f"{r['name']}_{y}_invest", disabled=True)
                 with col4_:
                     naver_search_url = f"https://finance.naver.com/search/search.naver?query={r['name']}" if r['name'] else "https://finance.naver.com/"
-                    st.markdown(f"[네이버 주식 검색]({naver_search_url})", unsafe_allow_html=True)
+                    st.markdown(f"[네이버 주식]({naver_search_url})", unsafe_allow_html=True)
                 with col5_:
                     fn_guide_url = "https://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?gicode=A348950&MenuYn=Y"
-                    st.markdown(f"[FnGuide 배당정보]({fn_guide_url})", unsafe_allow_html=True)
+                    st.markdown(f"[FnGuide]({fn_guide_url})", unsafe_allow_html=True)
                 buy_plan.append(qty)
                 invest_plan.append(invest)
             global_buy_plan[r['name']] = buy_plan
@@ -75,36 +75,28 @@ with col2:
                     row = {"연도": y, "월": m}
                     total_div = 0
                     for r in user_reits:
-                        # 누적 보유량: 해당 연도까지의 매입 합계
                         shares = sum(global_buy_plan[r['name']][:y_idx+1])
-                        if m in r["div_months"]:
-                            div = shares * r["div_per_share"]
-                        else:
-                            div = 0
+                        div = shares * r["div_per_share"] if m in r["div_months"] else 0
                         row[r["name"]] = div
                         total_div += div
                     row["총배당금"] = total_div
                     records.append(row)
 
             df = pd.DataFrame(records)
+            df.columns = df.columns.str.strip()  # 🔧 컬럼 공백 제거
             df["누적배당금"] = df.groupby("연도")["총배당금"].cumsum()
             df["전체누적배당금"] = df["총배당금"].cumsum()
 
             # 5. 연도별 투자원금 및 수익률 계산
-            year_invest = []
-            year_div = []
-            year_profit = []
-            year_rate = []
+            year_invest, year_div, year_profit, year_rate = [], [], [], []
             for y_idx, y in enumerate(years):
-                invest = 0
-                for r in user_reits:
-                    invest += sum(global_invest_plan[r['name']][:y_idx+1])
-                year_invest.append(invest)
+                invest = sum(sum(global_invest_plan[r['name']][:y_idx+1]) for r in user_reits)
                 div = df[df["연도"] == y]["총배당금"].sum()
-                year_div.append(div)
                 profit = div
-                year_profit.append(profit)
                 rate = (profit / invest * 100) if invest > 0 else 0
+                year_invest.append(invest)
+                year_div.append(div)
+                year_profit.append(profit)
                 year_rate.append(rate)
 
             year_df = pd.DataFrame({
@@ -129,8 +121,10 @@ with col2:
                 st.altair_chart(chart, use_container_width=True)
                 st.write(df_y[["월"] + reits_names + ["총배당금", "누적배당금"]])
 
+            # ✅ 누적 배당금 라인 차트 수정
+            df["연도-월"] = df["연도"].astype(str) + "-" + df["월"].astype(str).str.zfill(2)
             st.header("전체 누적 배당금 추이")
-            st.line_chart(df.set_index(["연도", "월"])[["전체누적배당금"]])
+            st.line_chart(df.set_index("연도-월")[["누적배당금"]])
 
             st.header("연도별 투자원금 및 수익률")
             st.dataframe(year_df)
